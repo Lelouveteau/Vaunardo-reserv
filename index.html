@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <title>Système de Réservation Pokémon</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tesseract.js pour OCR côté client -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.3/dist/tesseract.min.js"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen p-4">
 
@@ -38,13 +40,30 @@
 
   <div id="adminView" class="hidden space-y-6">
     <div>
-      <h2 class="text-xl font-bold text-purple-600 mb-2">Ajouter des Pokémon</h2>
+      <h2 class="text-xl font-bold text-purple-600 mb-2">Ajouter des Pokémon (texte)</h2>
       <textarea id="scanInput" class="w-full border rounded p-2 h-24"
         placeholder="Pikachu 50&#10;Dracaufeu 65"></textarea>
       <button onclick="addPokemon()"
         class="w-full mt-2 bg-purple-500 text-white py-2 rounded">
-        Ajouter à l'inventaire
+        Ajouter à l'inventaire (depuis le texte)
       </button>
+    </div>
+
+    <div>
+      <h2 class="text-xl font-bold text-purple-600 mb-2">Scanner une image (OCR) pour ajouter</h2>
+      <input id="scanImageInput" type="file" accept="image/*" class="mb-2" />
+      <div class="flex gap-2">
+        <button onclick="scanImage()" id="btnScanImage" class="px-4 py-2 bg-yellow-400 rounded">Scanner l'image</button>
+        <div id="ocrStatus" class="text-sm text-gray-600 self-center"></div>
+      </div>
+      <p class="text-sm text-gray-500 mt-2">L'image sera analysée (OCR) et le texte extrait sera interprété comme des lignes "<em>Nom Niveau</em>".</p>
+    </div>
+
+    <div>
+      <h2 class="text-xl font-bold text-purple-600 mb-2">Uploader des images de Pokémon</h2>
+      <input id="imagesUpload" type="file" accept="image/*" multiple class="mb-2" />
+      <button onclick="uploadImages()" class="w-full mt-1 bg-indigo-500 text-white py-2 rounded">Importer et associer aux Pokémon</button>
+      <p class="text-sm text-gray-500 mt-2">Les fichiers seront associés par nom de fichier (ex: <code>Pikachu.png</code>) aux Pokémon existants. Si aucun Pokémon correspondant n'est trouvé, une nouvelle entrée sera créée.</p>
     </div>
 
     <div>
@@ -84,9 +103,19 @@ function renderPokemon() {
     const div = document.createElement('div');
     div.className = `border p-3 rounded cursor-pointer ${selected.includes(p.id) ? 'border-blue-500 bg-blue-50' : ''}`;
     div.onclick = () => toggleSelect(p.id);
-    div.innerHTML = `<b>${p.name}</b><br>Niveau ${p.level}`;
+
+    let inner = '';
+    if (p.imageData) {
+      inner += `<div class="w-full h-32 flex items-center justify-center mb-2"><img src="${p.imageData}" alt="${escapeHtml(p.name)}" class="max-h-28 object-contain" /></div>`;
+    }
+    inner += `<b>${escapeHtml(p.name)}</b><br>Niveau ${escapeHtml(String(p.level))}`;
+    div.innerHTML = inner;
     list.appendChild(div);
   });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[m]; });
 }
 
 function toggleSelect(id) {
@@ -99,9 +128,14 @@ function reservePokemon() {
   const pseudo = document.getElementById('pseudoInput').value.trim();
   if (!pseudo || selected.length === 0) return alert('Pseudo et Pokémon requis');
 
+  // Limite à 2 Pokémon par jour pour un pseudo
   const today = new Date().toLocaleDateString('fr-FR');
-  if (orders.some(o => o.pseudo === pseudo && o.date === today)) {
-    return alert('Déjà une réservation aujourd’hui');
+  const reservedToday = orders
+    .filter(o => o.pseudo === pseudo && o.date === today)
+    .reduce((sum, o) => sum + o.pokemon.length, 0);
+
+  if (reservedToday + selected.length > 2) {
+    return alert('Vous ne pouvez pas réserver plus de 2 Pokémon par jour.');
   }
 
   const pokemon = inventory.filter(p => selected.includes(p.id));
@@ -114,15 +148,100 @@ function reservePokemon() {
   render();
 }
 
-function addPokemon() {
-  document.getElementById('scanInput').value.split('\n').forEach(l => {
+// Ajout de Pokémon depuis le textarea ou depuis du texte OCR
+function addPokemon(text) {
+  const raw = (typeof text === 'string') ? text : document.getElementById('scanInput').value;
+  raw.split('\n').forEach(l => {
     if (!l.trim()) return;
-    const [name, level = 50] = l.split(' ');
-    inventory.push({ id: Date.now() + Math.random(), name, level, reserved: false });
+    // Accept common separators and allow multi-word names (ex: "Dracaufeu 65")
+    const parts = l.trim().split(/\s+/);
+    const levelCandidate = parts[parts.length - 1];
+    let level = parseInt(levelCandidate, 10);
+    let name;
+    if (!isNaN(level)) {
+      name = parts.slice(0, parts.length - 1).join(' ');
+    } else {
+      // pas de niveau fourni -> niveau par défaut 50
+      level = 50;
+      name = parts.join(' ');
+    }
+    inventory.push({ id: Date.now() + Math.random(), name: name.trim(), level, reserved: false, imageData: null });
   });
-  document.getElementById('scanInput').value = '';
+  if (!text) document.getElementById('scanInput').value = '';
   save();
   render();
+}
+
+// OCR d'une image sélectionnée, puis ajout depuis le texte reconnu
+async function scanImage() {
+  const inp = document.getElementById('scanImageInput');
+  const status = document.getElementById('ocrStatus');
+  const file = inp.files && inp.files[0];
+  if (!file) return alert('Sélectionnez une image à scanner');
+
+  status.textContent = 'Analyse en cours...';
+  document.getElementById('btnScanImage').disabled = true;
+
+  try {
+    const { data: { text } } = await Tesseract.recognize(file, 'fra', {
+      logger: m => {
+        // m.progress, m.status
+        if (m.status === 'recognizing text') {
+          status.textContent = 'Reconnaissance: ' + Math.round(m.progress * 100) + '%';
+        }
+      }
+    });
+    status.textContent = 'Texte détecté, ajout au stock...';
+    // Nettoyage basique du texte: remplacer multiples espaces, normaliser retours à la ligne
+    const cleaned = text.replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+    addPokemon(cleaned);
+    status.textContent = 'Terminé — Pokémon ajoutés depuis l’image';
+  } catch (e) {
+    console.error(e);
+    status.textContent = 'Erreur pendant l\'OCR';
+    alert('Erreur pendant l\'analyse de l\'image. Voir la console pour détails.');
+  } finally {
+    document.getElementById('btnScanImage').disabled = false;
+    setTimeout(() => status.textContent = '', 3000);
+    inp.value = '';
+  }
+}
+
+// Upload d'images pour associer aux Pokémon par nom de fichier
+function uploadImages() {
+  const files = Array.from(document.getElementById('imagesUpload').files || []);
+  if (files.length === 0) return alert('Sélectionnez une ou plusieurs images');
+
+  let processed = 0;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const dataUrl = e.target.result;
+      // Nom sans extension, remplacer _ et - par espace, trim
+      const base = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+      const nameLower = base.toLowerCase();
+
+      // Chercher un Pokémon existant sans image qui correspond (nom contenu ou égal), priorité exact match
+      let match = inventory.find(i => i.name.toLowerCase() === nameLower);
+      if (!match) {
+        match = inventory.find(i => i.name.toLowerCase().includes(nameLower) && !i.imageData);
+      }
+      if (match) {
+        match.imageData = dataUrl;
+      } else {
+        // créer nouvelle entrée si aucun match
+        inventory.push({ id: Date.now() + Math.random(), name: base, level: 50, reserved: false, imageData: dataUrl });
+      }
+      processed++;
+      if (processed === files.length) {
+        save();
+        render();
+        document.getElementById('imagesUpload').value = '';
+        alert('Images importées et associées.');
+      }
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function renderOrders() {
@@ -131,8 +250,8 @@ function renderOrders() {
   orders.forEach(o => {
     const div = document.createElement('div');
     div.className = 'border rounded p-4';
-    div.innerHTML = `<b>${o.pseudo}</b> (${o.status})<br>
-      ${o.pokemon.map(p => `• ${p.name} niv.${p.level}`).join('<br>')}
+    div.innerHTML = `<b>${escapeHtml(o.pseudo)}</b> (${escapeHtml(o.status)})<br>
+      ${o.pokemon.map(p => `• ${escapeHtml(p.name)} niv.${escapeHtml(String(p.level))}`).join('<br>')}
       <div class="mt-2">
         <button onclick="toggleStatus(${o.id})" class="px-3 py-1 bg-green-100 rounded mr-2">Changer statut</button>
         <button onclick="deleteOrder(${o.id})" class="px-3 py-1 bg-red-100 rounded">Supprimer</button>
@@ -143,12 +262,14 @@ function renderOrders() {
 
 function toggleStatus(id) {
   const o = orders.find(o => o.id === id);
+  if (!o) return;
   o.status = o.status === 'pending' ? 'completed' : 'pending';
   save(); render();
 }
 
 function deleteOrder(id) {
   const o = orders.find(o => o.id === id);
+  if (!o) return;
   o.pokemon.forEach(p => {
     const inv = inventory.find(i => i.id === p.id);
     if (inv) inv.reserved = false;
