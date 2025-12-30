@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Système de Réservation Pokémon</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    :root{
+      --ui-scale: 1.18;
+      --base-font: calc((14px + 0.6vw + 0.6vh) * var(--ui-scale));
+    }
+    html { font-size: var(--base-font); }
+
+    .top-banner {
+      width: 100%;
+      height: clamp(140px, 18vh, 260px);
+      background-position: center;
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-image: url('assets/images/banner-long.jpg');
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: visible;
+      box-shadow: 0 8px 30px rgba(16,24,40,0.08);
+    }
+    .top-banner::after{
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02));
+      pointer-events: none;
+    }
+
+    .top-avatar {
+      width: clamp(110px, 12vw, 180px);
+      height: clamp(110px, 12vw, 180px);
+      border-radius: 50%;
+      background-color: white;
+      object-fit: cover;
+      border: 6px solid rgba(255,255,255,0.95);
+      box-shadow: 0 12px 30px rgba(2,6,23,0.18), inset 0 -6px 12px rgba(0,0,0,0.06);
+      z-index: 5;
+      position: relative;
+      transform: translateY(6%);
+    }
+
+    .admin-panel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .admin-trigger {
+      padding: 12px 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .admin-trigger:hover {
+      background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    }
+
+    .admin-trigger.active {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+
+    .admin-form {
+      padding: 20px;
+      background: white;
+      min-width: 280px;
+      display: none;
+    }
+
+    .admin-form.show {
+      display: block;
+    }
+
+    .app { transform-origin: top center; }
+    .card-container {
+      max-width: 1100px;
+      margin: -56px auto 40px;
+      padding: 1.25rem;
+    }
+
+    .poke-thumb {
+      width: 64px;
+      height: 64px;
+      border-radius: 8px;
+      background-position: center;
+      background-size: cover;
+      background-repeat: no-repeat;
+      flex: 0 0 64px;
+      margin-right: 12px;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .pokemon-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .baron-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      color: white;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      margin-left: 6px;
+      box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
+    }
+
+    .admin-cache-btn {
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: rgba(239, 68, 68, 0.1);
+      color: rgb(239, 68, 68);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      transition: all 0.2s;
+    }
+
+    .admin-cache-btn:hover {
+      background: rgba(239, 68, 68, 0.2);
+    }
+
+    .pending-list {
+      background: #fef3c7;
+      border: 2px dashed #fbbf24;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 640px){
+      :root{ --ui-scale: 1; }
+      .card-container { margin-top: -36px; }
+      .admin-panel {
+        top: 10px;
+        right: 10px;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen p-0">
+
+  <header class="top-banner" id="topBanner" role="banner" aria-label="Bannière du site">
+    <img src="assets/images/logo.svg" alt="Logo Vaunardo" class="top-avatar" id="topAvatar" />
+  </header>
+
+  <div class="admin-panel">
+    <div class="admin-trigger" id="adminTrigger" onclick="toggleAdminPanel()">
+      <span id="adminIcon">🔒</span>
+      <span id="adminLabel">Admin</span>
+    </div>
+    <div class="admin-form" id="adminForm">
+      <label class="block text-sm font-semibold text-gray-700 mb-2">Code administrateur</label>
+      <input type="password" id="adminCodeInput" class="w-full border rounded-lg p-2 mb-3" placeholder="Entrez le code">
+      <div class="flex gap-2">
+        <button onclick="validateAdminCode()" class="flex-1 bg-purple-500 text-white py-2 rounded-lg font-semibold hover:bg-purple-600">
+          Valider
+        </button>
+        <button onclick="toggleAdminPanel()" class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300">
+          Annuler
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <main class="app">
+    <div class="card-container max-w-6xl mx-auto bg-white rounded-xl shadow-lg p-6">
+      <h1 class="text-3xl font-bold text-center mb-6 text-purple-600">
+        🎮 Système de Réservation Pokémon
+      </h1>
+
+      <div id="clientView" class="px-2">
+        <label class="block font-semibold mb-2">Votre pseudo</label>
+        <input id="pseudoInput" class="w-full border rounded p-2 mb-4" placeholder="Pseudo"> 
+
+        <div class="flex gap-2 items-center mb-3">
+          <p class="text-sm text-gray-600">Choisissez jusqu'à 2 Pokémon</p>
+          <input id="pokemonSearch" oninput="renderPokemon()" class="ml-auto border rounded p-2 text-sm"
+                 placeholder="Rechercher par nom (ex: Pikachu)" />
+        </div>
+
+        <div id="pokemonList" class="grid md:grid-cols-3 gap-4 mb-4"></div>
+
+        <button onclick="reservePokemon()"
+          class="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600">
+          Confirmer la réservation
+        </button>
+      </div>
+
+      <div id="adminView" class="hidden space-y-6 px-2">
+        <div>
+          <h2 class="text-xl font-bold text-purple-600 mb-2">Scanner des Pokémon</h2>
+          <textarea id="scanInput" class="w-full border rounded p-2 h-24"
+            placeholder="Exemples (une par ligne avec quantité) :&#10;4 Pikachu&#10;2 Charizard&#10;3 Eevee"></textarea>
+          <button onclick="scanPokemon()"
+            class="w-full mt-2 bg-purple-500 text-white py-2 rounded hover:bg-purple-600">
+            Scanner
+          </button>
+        </div>
+
+        <div id="pendingSection" class="hidden">
+          <h2 class="text-xl font-bold text-purple-600 mb-2">Pokémon en attente de validation</h2>
+          <div class="pending-list">
+            <div id="pendingList" class="space-y-3"></div>
+            <button onclick="validateAllPending()" class="w-full mt-3 bg-green-500 text-white py-2 rounded hover:bg-green-600">
+              ✓ Valider tous et rendre visibles
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-xl font-bold text-purple-600 mb-2">Inventaire (admin)</h2>
+          <div id="inventoryAdmin" class="space-y-2 mb-4"></div>
+          <button class="admin-cache-btn w-full" onclick="clearPokeImageCache()">
+            🗑️ Vider le cache des images
+          </button>
+        </div>
+
+        <div>
+          <h2 class="text-xl font-bold text-purple-600 mb-2">Commandes</h2>
+          <div id="ordersList" class="space-y-4"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+<script>
+const CONFIG = {
+  ADMIN_CODE: '1234',
+  USE_GOOGLE_CUSTOM_SEARCH: false,
+  GOOGLE_API_KEY: '',
+  GOOGLE_CX: ''
+};
+
+let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+let pendingPokemon = []; // Pokémon scannés en attente de validation
+let orders = JSON.parse(localStorage.getItem('orders') || '[]');
+let selected = [];
+let imageCache = JSON.parse(localStorage.getItem('pokeImageCache') || '{}');
+let isAdminMode = false;
+
+function save() {
+  localStorage.setItem('inventory', JSON.stringify(inventory));
+  localStorage.setItem('orders', JSON.stringify(orders));
+  localStorage.setItem('pokeImageCache', JSON.stringify(imageCache));
+}
+
+/* ======= Admin Panel ======= */
+function toggleAdminPanel(){
+  const form = document.getElementById('adminForm');
+  const isShowing = form.classList.contains('show');
+  
+  if (isShowing) {
+    form.classList.remove('show');
+    document.getElementById('adminCodeInput').value = '';
+  } else {
+    if (isAdminMode) {
+      logoutAdmin();
+    } else {
+      form.classList.add('show');
+      setTimeout(() => document.getElementById('adminCodeInput').focus(), 100);
+    }
+  }
+}
+
+function validateAdminCode(){
+  const code = document.getElementById('adminCodeInput').value;
+  if (code === CONFIG.ADMIN_CODE) {
+    isAdminMode = true;
+    setMode('admin');
+    document.getElementById('adminForm').classList.remove('show');
+    document.getElementById('adminCodeInput').value = '';
+    updateAdminPanelUI();
+  } else {
+    alert('Code administrateur invalide');
+  }
+}
+
+function logoutAdmin(){
+  isAdminMode = false;
+  setMode('client');
+  updateAdminPanelUI();
+}
+
+function updateAdminPanelUI(){
+  const trigger = document.getElementById('adminTrigger');
+  const icon = document.getElementById('adminIcon');
+  const label = document.getElementById('adminLabel');
+  
+  if (isAdminMode) {
+    trigger.classList.add('active');
+    icon.textContent = '✓';
+    label.textContent = 'Déconnexion';
+  } else {
+    trigger.classList.remove('active');
+    icon.textContent = '🔒';
+    label.textContent = 'Admin';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const codeInput = document.getElementById('adminCodeInput');
+  if (codeInput) {
+    codeInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') validateAdminCode();
+    });
+  }
+});
+
+/* ======= Mode & UI ======= */
+function setMode(m){
+  document.getElementById('clientView').classList.toggle('hidden', m !== 'client');
+  document.getElementById('adminView').classList.toggle('hidden', m !== 'admin');
+  render();
+}
+
+/* ======= Image fetching ======= */
+async function fetchFromPokeAPI(name){
+  try {
+    const slug = name.trim().toLowerCase().replace(/[\'',.,]/g,'').replace(/\s+/g,'-');
+    const url = `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(slug)}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const art = json?.sprites?.other?.['official-artwork']?.front_default;
+    const front = json?.sprites?.front_default;
+    return art || front || null;
+  } catch (e) {
+    console.warn('PokeAPI error', e);
+    return null;
+  }
+}
+
+async function fetchFromGoogle(name){
+  if (!CONFIG.USE_GOOGLE_CUSTOM_SEARCH || !CONFIG.GOOGLE_API_KEY || !CONFIG.GOOGLE_CX) return null;
+  try {
+    const q = encodeURIComponent(name + ' pokemon artwork');
+    const url = `https://www.googleapis.com/customsearch/v1?key=${CONFIG.GOOGLE_API_KEY}&cx=${CONFIG.GOOGLE_CX}&searchType=image&q=${q}&num=1`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j?.items?.[0]?.link || null;
+  } catch (e) {
+    console.warn('Google search error', e);
+    return null;
+  }
+}
+
+function unsplashFallback(name){
+  return `https://source.unsplash.com/400x400/?${encodeURIComponent(name + ' pokemon')}`;
+}
+
+async function fetchPokemonImage(name){
+  const key = String(name || '').trim();
+  if (!key) return null;
+  const cacheKey = key.toLowerCase();
+  if (imageCache[cacheKey]) return imageCache[cacheKey];
+
+  const pokeImg = await fetchFromPokeAPI(name);
+  if (pokeImg){
+    imageCache[cacheKey] = pokeImg;
+    save();
+    return pokeImg;
+  }
+
+  const googleImg = await fetchFromGoogle(name);
+  if (googleImg){
+    imageCache[cacheKey] = googleImg;
+    save();
+    return googleImg;
+  }
+
+  const unsplash = unsplashFallback(name);
+  imageCache[cacheKey] = unsplash;
+  save();
+  return unsplash;
+}
+
+async function ensureImageForPokemon(p){
+  if (p.imageUrl) return p.imageUrl;
+  try {
+    const url = await fetchPokemonImage(p.name);
+    if (url){
+      p.imageUrl = url;
+      save();
+      return url;
+    }
+  } catch (e) {
+    console.warn('ensureImage error', e);
+  }
+  return null;
+}
+
+/* ======= Scan & Pending ======= */
+function scanPokemon(){
+  const raw = document.getElementById('scanInput').value;
+  if (!raw.trim()) return;
+  
+  pendingPokemon = [];
+  raw.split('\n').forEach(l => {
+    if (!l.trim()) return;
+    const parts = l.trim().split(/\s+/);
+    let quantity = 1;
+    let nameParts = parts;
+    
+    // Si le premier élément est un nombre, c'est la quantité
+    if (/^\d+$/.test(parts[0])) {
+      quantity = parseInt(parts[0], 10);
+      nameParts = parts.slice(1);
+    }
+    
+    const name = nameParts.join(' ');
+    if (!name) return;
+    
+    // Créer les Pokémon avec baron = false par défaut
+    for (let i = 0; i < quantity; i++) {
+      const p = {
+        id: Date.now() + Math.random(),
+        name: name,
+        baron: false,
+        reserved: false
+      };
+      pendingPokemon.push(p);
+      ensureImageForPokemon(p);
+    }
+  });
+  
+  document.getElementById('scanInput').value = '';
+  renderPendingList();
+}
+
+function renderPendingList(){
+  const section = document.getElementById('pendingSection');
+  const list = document.getElementById('pendingList');
+  
+  if (pendingPokemon.length === 0) {
+    section.classList.add('hidden');
+    return;
+  }
+  
+  section.classList.remove('hidden');
+  list.innerHTML = '';
+  
+  // Grouper par nom pour afficher ensemble
+  const grouped = {};
+  pendingPokemon.forEach(p => {
+    if (!grouped[p.name]) grouped[p.name] = [];
+    grouped[p.name].push(p);
+  });
+  
+  Object.keys(grouped).forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'border rounded p-3 bg-white';
+    
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between mb-2';
+    header.innerHTML = `<b>${escapeHtml(name)}</b> <span class="text-sm text-gray-600">(${grouped[name].length}x)</span>`;
+    
+    const checkboxes = document.createElement('div');
+    checkboxes.className = 'space-y-1';
+    
+    grouped[name].forEach((p, idx) => {
+      const label = document.createElement('label');
+      label.className = 'flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = p.baron;
+      checkbox.onchange = () => { p.baron = checkbox.checked; };
+      const text = document.createElement('span');
+      text.className = 'text-sm';
+      text.textContent = `#${idx + 1} Baron`;
+      label.appendChild(checkbox);
+      label.appendChild(text);
+      checkboxes.appendChild(label);
+    });
+    
+    div.appendChild(header);
+    div.appendChild(checkboxes);
+    list.appendChild(div);
+  });
+}
+
+function validateAllPending(){
+  if (pendingPokemon.length === 0) return;
+  
+  // Ajouter tous les Pokémon en attente à l'inventaire
+  pendingPokemon.forEach(p => {
+    inventory.push(p);
+  });
+  
+  pendingPokemon = [];
+  save();
+  alert(`${pendingPokemon.length || 'Tous les'} Pokémon ajoutés à l'inventaire ✓`);
+  render();
+}
+
+/* ======= Rendering & actions ======= */
+function render(){
+  renderPokemon();
+  renderOrders();
+  renderAdminInventory();
+  renderPendingList();
+}
+
+function renderPokemon(){
+  const list = document.getElementById('pokemonList');
+  list.innerHTML = '';
+  const search = (document.getElementById('pokemonSearch')?.value || '').trim().toLowerCase();
+  const visible = inventory.filter(p => !p.reserved).filter(p => p.name.toLowerCase().includes(search));
+
+  if (visible.length === 0){
+    const empty = document.createElement('div');
+    empty.className = 'text-gray-500';
+    empty.textContent = 'Aucun Pokémon trouvé.';
+    list.appendChild(empty);
+    return;
+  }
+
+  visible.forEach(p => {
+    const card = document.createElement('div');
+    card.className = `border p-3 rounded cursor-pointer pokemon-card transition-all ${selected.includes(p.id) ? 'border-blue-500 bg-blue-50' : 'hover:border-gray-400'}`;
+    card.onclick = () => { toggleSelect(p.id); };
+
+    const thumb = document.createElement('div');
+    thumb.className = 'poke-thumb';
+    if (p.imageUrl) {
+      thumb.style.backgroundImage = `url('${p.imageUrl}')`;
+    } else {
+      thumb.style.backgroundImage = `url('data:image/svg+xml;utf8,${encodeURIComponent(makePlaceholderSvg(p.name))}')`;
+      ensureImageForPokemon(p).then(url => {
+        if (url) thumb.style.backgroundImage = `url('${url}')`;
+      });
+    }
+
+    const info = document.createElement('div');
+    info.innerHTML = `<b>${escapeHtml(p.name)}</b>${p.baron ? '<span class="baron-badge">BARON</span>' : ''}`;
+
+    card.appendChild(thumb);
+    card.appendChild(info);
+    list.appendChild(card);
+  });
+}
+
+function toggleSelect(id){
+  if (selected.includes(id)) selected = selected.filter(i => i !== id);
+  else if (selected.length < 2) selected.push(id);
+  renderPokemon();
+}
+
+function reservePokemon(){
+  const pseudo = document.getElementById('pseudoInput').value.trim();
+  if (!pseudo || selected.length === 0) return alert('Pseudo et au moins 1 Pokémon requis');
+
+  const today = new Date().toLocaleDateString('fr-FR');
+  if (orders.some(o => o.pseudo === pseudo && o.date === today)) {
+    return alert('Déjà une réservation aujourd\'hui pour ce pseudo');
+  }
+
+  const pokemon = inventory.filter(p => selected.includes(p.id));
+  pokemon.forEach(p => p.reserved = true);
+
+  orders.push({ id: Date.now(), pseudo, pokemon, date: today, status: 'pending' });
+  selected = [];
+  save();
+  alert('Réservation réussie ✓');
+  render();
+}
+
+function deletePokemon(id){
+  if (!confirm('Supprimer ce Pokémon de l\'inventaire ? Cette action est irréversible.')) return;
+  orders.forEach(o => o.pokemon = o.pokemon.filter(p => p.id !== id));
+  orders = orders.filter(o => o.pokemon.length > 0);
+  inventory = inventory.filter(p => p.id !== id);
+  save();
+  render();
+}
+
+function forceImageForPokemon(id){
+  const p = inventory.find(x => x.id === id);
+  if (!p) return alert('Pokémon introuvable');
+  const key = p.name.toLowerCase();
+  delete imageCache[key];
+  delete p.imageUrl;
+  save();
+  ensureImageForPokemon(p).then(url => {
+    if (url) alert('Image mise à jour ✓'); else alert('Pas d\'image trouvée');
+    render();
+  });
+}
+
+function renderAdminInventory(){
+  const list = document.getElementById('inventoryAdmin');
+  list.innerHTML = '';
+  if (inventory.length === 0){
+    const empty = document.createElement('div');
+    empty.className = 'text-gray-500';
+    empty.textContent = 'Aucun Pokémon en inventaire.';
+    list.appendChild(empty);
+    return;
+  }
+
+  inventory.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'border rounded p-3 flex justify-between items-center hover:bg-gray-50 transition-colors';
+    const left = document.createElement('div');
+    left.className = 'flex items-center';
+    const thumb = document.createElement('div');
+    thumb.className = 'poke-thumb';
+    if (p.imageUrl) thumb.style.backgroundImage = `url('${p.imageUrl}')`;
+    else {
+      thumb.style.backgroundImage = `url('data:image/svg+xml;utf8,${encodeURIComponent(makePlaceholderSvg(p.name))}')`;
+      ensureImageForPokemon(p).then(url => { if (url) render(); });
+    }
+
+    const info = document.createElement('div');
+    info.className = 'ml-3';
+    info.innerHTML = `<b>${escapeHtml(p.name)}</b>${p.baron ? '<span class="baron-badge">BARON</span>' : ''}
+                      ${p.reserved ? '<span class="ml-2 text-xs text-red-600">(réservé)</span>' : ''}`;
+
+    left.appendChild(thumb);
+    left.appendChild(info);
+
+    const right = document.createElement('div');
+    right.className = 'flex gap-2';
+    
+    const baronBtn = document.createElement('button');
+    baronBtn.className = `px-3 py-1 rounded text-sm transition-colors ${p.baron ? 'bg-yellow-100 hover:bg-yellow-200' : 'bg-gray-100 hover:bg-gray-200'}`;
+    baronBtn.textContent = p.baron ? '⭐ Baron' : 'Normal';
+    baronBtn.onclick = () => { p.baron = !p.baron; save(); render(); };
+
+    const toggleResBtn = document.createElement('button');
+    toggleResBtn.className = 'px-3 py-1 bg-blue-100 rounded text-sm hover:bg-blue-200 transition-colors';
+    toggleResBtn.textContent = p.reserved ? 'Rendre dispo' : 'Marquer réservé';
+    toggleResBtn.onclick = () => { p.reserved = !p.reserved; save(); render(); };
+
+    const forceBtn = document.createElement('button');
+    forceBtn.className = 'px-3 py-1 bg-green-100 rounded text-sm hover:bg-green-200 transition-colors';
+    forceBtn.textContent = '🔄 Image';
+    forceBtn.onclick = () => forceImageForPokemon(p.id);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'px-3 py-1 bg-red-100 rounded text-sm hover:bg-red-200 transition-colors';
+    removeBtn.textContent = '✕';
+    removeBtn.onclick = () => deletePokemon(p.id);
+
+    right.appendChild(baronBtn);
+    right.appendChild(toggleResBtn);
+    right.appendChild(forceBtn);
+    right.appendChild(removeBtn);
+
+    div.appendChild(left);
+    div.appendChild(right);
+    list.appendChild(div);
+  });
+}
+
+function renderOrders(){
+  const list = document.getElementById('ordersList');
+  list.innerHTML = '';
+  if (orders.length === 0){
+    const empty = document.createElement('div');
+    empty.className = 'text-gray-500';
+    empty.textContent = 'Aucune commande.';
+    list.appendChild(empty);
+    return;
+  }
+
+  orders.forEach(o => {
+    const div = document.createElement('div');
+    div.className = 'border rounded p-4 hover:bg-gray-50 transition-colors';
+    const header = document.createElement('div');
+    header.innerHTML = `<b>${escapeHtml(o.pseudo)}</b> (${escapeHtml(o.status)})<br><small class="text-gray-500">${escapeHtml(o.date)}</small>`;
+    const listPok = document.createElement('div');
+    listPok.className = 'mt-2 space-y-1';
+    o.pokemon.forEach(p => {
+      const item = document.createElement('div');
+      item.className = 'flex items-center';
+      const thumb = document.createElement('div');
+      thumb.className = 'poke-thumb';
+      if (p.imageUrl) thumb.style.backgroundImage = `url('${p.imageUrl}')`;
+      else {
+        ensureImageForPokemon(p).then(url => { if (url) render(); });
+        thumb.style.backgroundImage = `url('data:image/svg+xml;utf8,${encodeURIComponent(makePlaceholderSvg(p.name))}')`;
+      }
+      const txt = document.createElement('div');
+      txt.className = 'ml-3';
+      txt.innerHTML = `${escapeHtml(p.name)}${p.baron ? '<span class="baron-badge">BARON</span>' : ''}`;
+      item.appendChild(thumb);
+      item.appendChild(txt);
+      listPok.appendChild(item);
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'mt-2';
+    actions.innerHTML = `<button onclick="toggleStatus(${o.id})" class="px-3 py-1 bg-green-100 rounded mr-2 hover:bg-green-200 transition-colors">Changer statut</button>
+                         <button onclick="deleteOrder(${o.id})" class="px-3 py-1 bg-red-100 rounded hover:bg-red-200 transition-colors">Supprimer</button>`;
+
+    div.appendChild(header);
+    div.appendChild(listPok);
+    div.appendChild(actions);
+    list.appendChild(div);
+  });
+}
+
+function toggleStatus(id){
+  const o = orders.find(o => o.id === id);
+  if (!o) return;
+  o.status = o.status === 'pending' ? 'completed' : 'pending';
+  save(); render();
+}
+
+function deleteOrder(id){
+  const o = orders.find(o => o.id === id);
+  if (!o) return;
+  if (!confirm('Supprimer cette commande ?')) return;
+  o.pokemon.forEach(p => {
+    const inv = inventory.find(i => i.id === p.id);
+    if (inv) inv.reserved = false;
+  });
+  orders = orders.filter(o => o.id !== id);
+  save(); render();
+}
+
+function escapeHtml(unsafe){
+  return String(unsafe || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('\"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function makePlaceholderSvg(name){
+  const initial = (name && name[0]) ? name[0].toUpperCase() : '?';
+  const color = '#f3f4f6';
+  const textColor = '#6b7280';
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'>\n    <rect width='100%' height='100%' fill='${color}' />\n    <text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' font-size='140' fill='${textColor}' font-family='Arial, sans-serif'>${initial}</text>\n  </svg>`;
+  return svg;
+}
+
+function clearPokeImageCache(){
+  if (!confirm('Vider le cache des images ? Toutes les images devront être rechargées.')) return;
+  imageCache = {};
+  localStorage.removeItem('pokeImageCache');
+  inventory.forEach(p => delete p.imageUrl);
+  save();
+  alert('Cache images vidé ✓');
+  render();
+}
+
+render();
